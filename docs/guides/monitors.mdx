@@ -1,0 +1,175 @@
+---
+title: Setting Up Monitors
+sidebar_order: 26
+description: "Practical guidance on deciding what to monitor, configuring cron and uptime monitors effectively, and avoiding false positives."
+---
+
+Monitors tell you when something that _should_ happen, doesn't — or when something that _should be up_, isn't. Unlike error alerts, which fire reactively when something breaks, monitors are proactive: they detect silent failures like a missed billing job or an endpoint that stopped responding.
+
+This guide covers what to monitor, how to configure cron and uptime monitors effectively, and three concrete use case walkthroughs.
+
+## Monitor Types
+
+Sentry has two monitor types:
+
+| Type | What It Watches | Best For |
+| ---- | --------------- | -------- |
+| [Cron monitor](/product/crons/) | Scheduled/recurring jobs | Detecting missed runs, failures, and timeouts in background jobs |
+| [Uptime monitor](/product/new-monitors-and-alerts/monitors/uptime-monitoring/) | HTTP endpoint availability | Detecting downtime and slow responses for critical URLs |
+
+## What to Monitor
+
+The temptation is to add monitors for everything. The better approach is to start with jobs and endpoints where a silent failure has a direct, delayed impact — problems you'd otherwise only discover when a customer complains.
+
+### Cron jobs worth monitoring
+
+Not every background job needs a monitor. Focus on jobs where a missed or failed run causes visible business impact:
+
+- **Revenue-critical**: Invoice generation, payment processing, subscription renewals
+- **Data-critical**: Database backups, data exports, sync jobs with external systems
+- **User-facing delivery**: Email sends, push notification delivery, digest generation
+- **Compliance or audit**: Log archival, GDPR deletion jobs, report generation
+
+Lower priority: maintenance cleanup jobs, cache warming, analytics aggregation. Add monitors for these once the high-priority ones are covered.
+
+### Endpoints worth uptime monitoring
+
+Monitor endpoints at the level your users experience, not just your internal health check:
+
+- **Customer-facing entry points**: Login, signup, checkout, the homepage
+- **Mobile/API entry points**: The base API endpoint your apps hit on launch
+- **Webhooks you receive**: Payment processor callbacks, third-party integrations you depend on
+- **Internal health checks**: Only if a failure there means something users would feel
+
+Don't monitor every endpoint — that generates noise and makes it harder to act on real downtime.
+
+## Configuring Cron Monitors Well
+
+A poorly configured cron monitor generates false positives. The key settings to get right:
+
+### Schedule and checkin margin
+
+The **schedule** tells Sentry when to expect a check-in. The **checkin margin** (grace period) is how long Sentry waits after a scheduled run before marking it missed.
+
+Set the margin to account for:
+- Scheduler startup time and job queue delay
+- Variable runtime at the start (many jobs run quickly but occasionally hit slow paths)
+- Clock skew between your job scheduler and Sentry's system
+
+A margin of 5–10% of your job's expected interval is a reasonable starting point. For a job that runs every hour, a 5-minute margin is appropriate.
+
+### Max runtime (timeout detection)
+
+Set **max runtime** to the longest your job should reasonably take. If the job sends an initial check-in but never sends a final one within this window, Sentry marks it as timed out.
+
+Set this to your P99 runtime plus a buffer — not the average. A job that normally takes 30 seconds might occasionally take 3 minutes during high load. Setting max runtime to 5 minutes catches genuine hangs without false-firing on slow runs.
+
+### Assign an owner
+
+Assign an [owner](/product/crons/job-monitoring/#ownership) to each monitor — either a team or a specific person. Unowned monitors notify all project members, which is the fastest path to alert fatigue. The owner also receives escalation notifications when a monitor becomes broken.
+
+### Connecting errors to your monitor
+
+If your job uses the Sentry SDK, [link errors to the monitor](/product/crons/getting-started/http/#connecting-errors-to-cron-monitors) by setting the monitor slug in your SDK initialization for that job. This surfaces any errors thrown during the job run directly on the monitor's detail page, alongside the check-in timeline — instead of only in Issues.
+
+## Configuring Uptime Monitors Well
+
+### Start with automatic detection
+
+Sentry [automatically configures an uptime monitor](/product/new-monitors-and-alerts/monitors/uptime-monitoring/automatic-detection/) for the most frequently seen hostname in your error data. Check this first — you may already have uptime monitoring for your primary domain without setting anything up.
+
+### Failure threshold
+
+By default, Sentry requires **three consecutive failures** before creating an uptime issue. This prevents false positives from transient network issues or one-off timeouts. You can adjust this threshold when configuring the monitor, but the default is appropriate for most teams.
+
+For internal services with high uptime expectations, consider lowering the threshold. For third-party endpoints you monitor but don't control, the default or higher is better.
+
+### Monitor what matters, not just `/health`
+
+A `/health` endpoint that returns 200 OK but depends on no real application code can give you a false sense of security. Where possible, monitor an endpoint that exercises a real code path — even a lightweight one, like fetching a single record or verifying auth.
+
+## Handling Noise
+
+### Use environments
+
+Set alert rules for cron monitors to only fire for specific environments. A missed job in staging isn't worth a page — the same job missed in production is. [Configure environment filters](/product/crons/job-monitoring/#alerting-on-specific-environments) on your monitor alerts.
+
+### Pause vs. mute
+
+**Pause** a monitor when you know the job won't run — during planned maintenance, deployments that disable a feature, or scheduled downtime. Pausing stops recording check-ins and stops notifications.
+
+**Mute** a monitor when it's broken and you're not ready to fix it yet. Sentry will also automatically mute a monitor that has been consistently broken for 28 days to reduce notification noise.
+
+Note: muting does not stop billing. To stop billing, deactivate or delete the monitor.
+
+## Use Case Walkthroughs
+
+### Gaming
+
+A multiplayer game backend runs several scheduled jobs that affect player experience directly: leaderboard updates, season reward distribution, matchmaking queue cleanup, and server asset sync. Silent failures in any of these show up as stale data or missing rewards — the kind of bug that generates support tickets, not error alerts.
+
+**Key monitors to set up:**
+
+| Monitor | Type | Schedule | Max Runtime | Owner |
+| ------- | ---- | -------- | ----------- | ----- |
+| Leaderboard recalculation | Cron | Every 5 minutes | 3 min | `#game-backend` |
+| Season reward distribution | Cron | Weekly (end of season) | 30 min | `#game-ops` |
+| Matchmaking queue cleanup | Cron | Every minute | 30 sec | `#matchmaking-team` |
+| Server asset sync | Cron | Nightly | 20 min | `#infra` |
+| Game API entry point | Uptime | Every minute | — | `#game-oncall` |
+| Match results webhook receiver | Uptime | Every 5 minutes | — | `#game-backend` |
+
+**Noise strategy:** Tag each job with `game_region` and configure separate monitor environments per region (us-east, eu-west, ap-southeast). A failed leaderboard job in one region is a localized issue; failed in all three at once means something systemic.
+
+### SaaS
+
+A B2B SaaS product depends on a pipeline of billing, notification, and data jobs running reliably. A missed billing job means invoices don't go out; a failed data export job means a customer's Monday workflow breaks.
+
+**Key monitors to set up:**
+
+| Monitor | Type | Schedule | Max Runtime | Owner |
+| ------- | ---- | -------- | ----------- | ----- |
+| Invoice generation | Cron | Daily (end of billing period) | 15 min | `#billing-eng` |
+| Payment retry processing | Cron | Every 6 hours | 10 min | `#billing-eng` |
+| Trial expiration enforcement | Cron | Daily | 5 min | `#growth-eng` |
+| Scheduled data exports | Cron | Varies per customer | 30 min | `#data-eng` |
+| Notification delivery job | Cron | Every 2 minutes | 90 sec | `#platform-eng` |
+| API base endpoint | Uptime | Every minute | — | `#oncall` |
+
+**Noise strategy:** Add a `checkin_margin` that's generous enough for the billing job to handle end-of-month volume spikes (when it takes longer than usual). Use a separate monitor environment for each of `production`, `staging`, and `eu` (if you run a separate EU instance) and only alert on `production`.
+
+### Mobile
+
+The backend that powers a mobile app runs jobs that users experience indirectly: push notification delivery, app store review sync, analytics aggregation, and device registration cleanup. When these fail silently, users see stale content or stop receiving notifications.
+
+**Key monitors to set up:**
+
+| Monitor | Type | Schedule | Max Runtime | Owner |
+| ------- | ---- | -------- | ----------- | ----- |
+| Push notification delivery | Cron | Every 1 minute | 45 sec | `#mobile-backend` |
+| App store review sync | Cron | Every 4 hours | 10 min | `#mobile-platform` |
+| Device token cleanup | Cron | Weekly | 20 min | `#mobile-backend` |
+| Analytics aggregation | Cron | Hourly | 15 min | `#data-eng` |
+| Mobile API base endpoint | Uptime | Every minute | — | `#mobile-oncall` |
+| Push notification service health | Uptime | Every 5 minutes | — | `#mobile-backend` |
+
+**Noise strategy:** Push notification delivery runs frequently and is sensitive to queue depth — add a `checkin_margin` of 15 seconds to absorb burst delays. For the uptime monitors, set the failure threshold to 3 consecutive failures (the default) to avoid false positives from brief connectivity issues between Sentry and your mobile API.
+
+## Quick Reference
+
+| Goal | What to Configure |
+| ---- | ----------------- |
+| Detect missed cron runs | Cron monitor with schedule + checkin margin |
+| Detect timed-out jobs | Set max runtime to P99 + buffer |
+| Surface job errors on the monitor | Link Sentry SDK errors using the monitor slug |
+| Avoid staging noise | Set alert rules to fire only for `environment:production` |
+| Route to the right team | Assign owner (team or user) to each monitor |
+| Detect downtime proactively | Uptime monitor on your primary customer-facing endpoint |
+| Avoid false positive downtime alerts | Keep failure threshold at 3 consecutive failures (default) |
+
+## Next Steps
+
+- [Set up cron monitoring](/product/crons/getting-started/) — instrument your first job via SDK, CLI, or HTTP
+- [Configure uptime monitoring](/product/new-monitors-and-alerts/monitors/uptime-monitoring/) — set up URL monitoring with custom headers and verification
+- [Job monitoring UI walkthrough](/product/crons/job-monitoring/) — understand the check-in timeline and status views
+- [Cron troubleshooting](/product/crons/troubleshooting/) — fix common issues with missed check-ins and broken monitors
