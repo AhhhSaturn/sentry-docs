@@ -86,7 +86,7 @@ For internal services with high uptime expectations, consider lowering the thres
 
 ### Monitor What Matters, Not Just `/health`
 
-A `/health` endpoint that returns 200 OK but depends on no real application code can give you a false sense of security. Where possible, monitor an endpoint that exercises a real code path — even a lightweight one, like fetching a single record or verifying auth.
+A `/health` endpoint that returns 200 OK but depends on no real application code can give you a false sense of security. Where possible, monitor an endpoint that exercises a real code path, even a lightweight one, like fetching a single record or verifying auth.
 
 ## Handling Noise
 
@@ -94,7 +94,7 @@ A `/health` endpoint that returns 200 OK but depends on no real application code
 
 Set alert rules for cron monitors to only fire for specific environments. A missed job in staging isn't worth a page — the same job missed in production is. [Configure environment filters](/product/crons/job-monitoring/#alerting-on-specific-environments) on your monitor alerts.
 
-### Pause vs. mute
+### Pause vs. Mute
 
 **Pause** a monitor when you know the job won't run — during planned maintenance, deployments that disable a feature, or scheduled downtime. Pausing stops recording check-ins and stops notifications.
 
@@ -123,7 +123,7 @@ A multiplayer game backend runs several scheduled jobs that affect player experi
 
 ### SaaS
 
-A B2B SaaS product depends on a pipeline of billing, notification, and data jobs running reliably. A missed billing job means invoices don't go out; a failed data export job means a customer's Monday workflow breaks.
+SaaS products depend on a pipeline of billing, notification, and data jobs all running reliably. A missed billing job means invoices don't go out; a failed data export job means a customer's Monday workflow breaks. Monitors can be used to catch these issues right away.
 
 **Key monitors to set up:**
 
@@ -140,7 +140,7 @@ A B2B SaaS product depends on a pipeline of billing, notification, and data jobs
 
 ### Mobile
 
-The backend that powers a mobile app runs jobs that users experience indirectly: push notification delivery, app store review sync, analytics aggregation, and device registration cleanup. When these fail silently, users see stale content or stop receiving notifications.
+Mobile apps run backend jobs that affect users indirectly: push notification delivery, app store review sync, analytics aggregation, and device registration cleanup. When these fail silently, users see stale content or stop receiving notifications. Monitors can catch these issues before users ever see them.
 
 **Key monitors to set up:**
 
