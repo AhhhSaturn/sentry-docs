@@ -10,7 +10,7 @@ This guide covers what to monitor, how to configure cron and uptime monitors eff
 
 ## Monitor Types
 
-Sentry has two monitor types:
+Sentry has two monitor offerings:
 
 | Type | What It Watches | Best For |
 | ---- | --------------- | -------- |
@@ -19,22 +19,22 @@ Sentry has two monitor types:
 
 ## What to Monitor
 
-The temptation is to add monitors for everything. The better approach is to start with jobs and endpoints where a silent failure has a direct, delayed impact — problems you'd otherwise only discover when a customer complains.
+You may be tempted to add monitors for everything. The better approach is to start with jobs and endpoints where a silent failure has a direct, delayed impact, allowing you to catch problems before they impact users.
 
-### Cron jobs worth monitoring
+### Cron Jobs Worth Monitoring
 
-Not every background job needs a monitor. Focus on jobs where a missed or failed run causes visible business impact:
+Not every background job needs a monitor. Focus on jobs where a missed or failed run causes visible impact:
 
 - **Revenue-critical**: Invoice generation, payment processing, subscription renewals
 - **Data-critical**: Database backups, data exports, sync jobs with external systems
-- **User-facing delivery**: Email sends, push notification delivery, digest generation
+- **User-facing delivery**: Emails, push notification delivery, digest generation
 - **Compliance or audit**: Log archival, GDPR deletion jobs, report generation
 
-Lower priority: maintenance cleanup jobs, cache warming, analytics aggregation. Add monitors for these once the high-priority ones are covered.
+Lower priority: maintenance cleanup jobs, cache warming, analytics aggregation etc.
 
-### Endpoints worth uptime monitoring
+### Endpoints Worth Uptime Monitoring
 
-Monitor endpoints at the level your users experience, not just your internal health check:
+Monitor endpoints at the level your users experience, not just your internal health checks:
 
 - **Customer-facing entry points**: Login, signup, checkout, the homepage
 - **Mobile/API entry points**: The base API endpoint your apps hit on launch
@@ -47,50 +47,50 @@ Don't monitor every endpoint — that generates noise and makes it harder to act
 
 A poorly configured cron monitor generates false positives. The key settings to get right:
 
-### Schedule and checkin margin
+### Schedule and Checkin Margin
 
 The **schedule** tells Sentry when to expect a check-in. The **checkin margin** (grace period) is how long Sentry waits after a scheduled run before marking it missed.
 
 Set the margin to account for:
 - Scheduler startup time and job queue delay
 - Variable runtime at the start (many jobs run quickly but occasionally hit slow paths)
-- Clock skew between your job scheduler and Sentry's system
+- Timing mismatches between your job scheduler and Sentry's system
 
 A margin of 5–10% of your job's expected interval is a reasonable starting point. For a job that runs every hour, a 5-minute margin is appropriate.
 
-### Max runtime (timeout detection)
+### Max Runtime (Timeout Detection)
 
 Set **max runtime** to the longest your job should reasonably take. If the job sends an initial check-in but never sends a final one within this window, Sentry marks it as timed out.
 
 Set this to your P99 runtime plus a buffer — not the average. A job that normally takes 30 seconds might occasionally take 3 minutes during high load. Setting max runtime to 5 minutes catches genuine hangs without false-firing on slow runs.
 
-### Assign an owner
+### Assign an Owner
 
 Assign an [owner](/product/crons/job-monitoring/#ownership) to each monitor — either a team or a specific person. Unowned monitors notify all project members, which is the fastest path to alert fatigue. The owner also receives escalation notifications when a monitor becomes broken.
 
-### Connecting errors to your monitor
+### Connecting Errors to Your Monitor
 
-If your job uses the Sentry SDK, [link errors to the monitor](/product/crons/getting-started/http/#connecting-errors-to-cron-monitors) by setting the monitor slug in your SDK initialization for that job. This surfaces any errors thrown during the job run directly on the monitor's detail page, alongside the check-in timeline — instead of only in Issues.
+If your job uses the Sentry SDK, [link errors to the monitor](/product/crons/getting-started/http/#connecting-errors-to-cron-monitors) by setting the monitor slug in your SDK initialization for that job. This surfaces any errors thrown during the job run directly on the monitor's detail page, alongside the check-in timeline.
 
 ## Configuring Uptime Monitors Well
 
-### Start with automatic detection
+### Start with Automatic Detection
 
-Sentry [automatically configures an uptime monitor](/product/new-monitors-and-alerts/monitors/uptime-monitoring/automatic-detection/) for the most frequently seen hostname in your error data. Check this first — you may already have uptime monitoring for your primary domain without setting anything up.
+Sentry [automatically configures an uptime monitor](/product/new-monitors-and-alerts/monitors/uptime-monitoring/automatic-detection/) for the most frequently seen hostname in your error data. Check this first — you may already have uptime monitoring for your primary domain enabled.
 
-### Failure threshold
+### Failure Threshold
 
-By default, Sentry requires **three consecutive failures** before creating an uptime issue. This prevents false positives from transient network issues or one-off timeouts. You can adjust this threshold when configuring the monitor, but the default is appropriate for most teams.
+By default, Sentry requires **three consecutive failures** before creating an uptime issue. This catches false positives from transient network issues or one-off timeouts. You can adjust this threshold when configuring the monitor, but the default is appropriate for most teams.
 
 For internal services with high uptime expectations, consider lowering the threshold. For third-party endpoints you monitor but don't control, the default or higher is better.
 
-### Monitor what matters, not just `/health`
+### Monitor What Matters, Not Just `/health`
 
 A `/health` endpoint that returns 200 OK but depends on no real application code can give you a false sense of security. Where possible, monitor an endpoint that exercises a real code path — even a lightweight one, like fetching a single record or verifying auth.
 
 ## Handling Noise
 
-### Use environments
+### Use Environments
 
 Set alert rules for cron monitors to only fire for specific environments. A missed job in staging isn't worth a page — the same job missed in production is. [Configure environment filters](/product/crons/job-monitoring/#alerting-on-specific-environments) on your monitor alerts.
 
